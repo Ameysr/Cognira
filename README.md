@@ -152,6 +152,12 @@ All nodes communicate through a shared LangGraph state. No direct function calls
 
 ---
 
+## Documentation
+
+For a deep technical breakdown of every component, data flow, state management, error handling, and design decisions, see [docs/TECHNICAL.md](docs/TECHNICAL.md).
+
+---
+
 ## Roadmap
 
 | Phase | What Gets Added |
