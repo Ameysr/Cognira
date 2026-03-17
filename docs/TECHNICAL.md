@@ -15,7 +15,8 @@
 12. [Error Handling & Edge Cases](#12-error-handling--edge-cases)
 13. [Testing](#13-testing)
 14. [Performance Considerations](#14-performance-considerations)
-15. [Future Phases](#15-future-phases)
+15. [Phase 4 Dev Loop Reference](#15-phase-4-dev-loop-reference)
+16. [Dashboard (Phase 5)](#16-dashboard-phase-5)
 
 ---
 
@@ -46,27 +47,66 @@ Cognira is an autonomous multi-agent system that transforms a software requireme
 
 ```
 cognira/
-├── src/
-│   ├── index.js                    # Application entry point
+├── src/                            # Core LangGraph pipeline
+│   ├── index.js                    # CLI entry point
 │   ├── agents/
-│   │   ├── pmAgent.js             # Project Manager Agent
-│   │   ├── architectAgent.js      # Architect Agent (5 steps)
-│   │   ├── blueprintValidator.js  # Blueprint validation logic
-│   │   └── plannerAgent.js        # Planner Agent
+│   │   ├── pmAgent.js              # Project Manager Agent
+│   │   ├── architectAgent.js       # Architect Agent (5 steps)
+│   │   ├── blueprintValidator.js   # Blueprint validation (no LLM)
+│   │   ├── plannerAgent.js         # Planner Agent
+│   │   ├── coderAgent.js           # Coder Agent (one file per LLM call)
+│   │   ├── reviewerAgent.js        # Reviewer Agent (static review)
+│   │   ├── executorAgent.js        # Executor Agent (import cross-check)
+│   │   └── debuggerAgent.js        # Debugger Agent (3-tier escalation)
 │   ├── nodes/
-│   │   ├── humanInput.js          # Terminal input handler
-│   │   ├── setupSandbox.js        # Sandbox creation node
-│   │   └── sandboxHealthCheck.js  # Sandbox verification node
+│   │   ├── humanInput.js           # Terminal input handler (CLI mode)
+│   │   ├── setupSandbox.js         # Sandbox creation + scaffold seeding
+│   │   ├── sandboxHealthCheck.js   # Sandbox verification
+│   │   ├── selectNextTask.js       # Task queue foreman (zero LLM)
+│   │   ├── contextBuilder.js       # Smart context builder (3-tier lookup)
+│   │   ├── updateRegistry.js       # File interface registry updater
+│   │   ├── snapshotManager.js      # Git snapshot after each task
+│   │   ├── simplifyTask.js         # Breaks failed tasks into sub-tasks
+│   │   ├── humanEscalation.js      # Human intervention node
+│   │   ├── phaseVerification.js    # Phase integrity + assembly trigger
+│   │   ├── assembleEntryPoints.js  # Auto-wire routes + pages
+│   │   ├── patternExtractor.js     # Code pattern extraction
+│   │   ├── stateCompactor.js       # State trimmer (zero LLM)
+│   │   ├── presentToUser.js        # Final project summary
+│   │   └── deploymentVerifier.js   # Docker deployment verifier
 │   ├── config/
-│   │   ├── state.js               # Complete state definition
-│   │   └── graph.js               # LangGraph wiring
+│   │   ├── state.js                # Complete LangGraph state definition
+│   │   └── graph.js                # LangGraph wiring (28 nodes)
 │   └── utils/
-│       ├── llm.js                 # Unified LLM provider (Gemini + DeepSeek)
-│       ├── tokenTracker.js        # Token usage tracking
-│       └── sandboxManager.js      # Sandbox filesystem operations
+│       ├── llm.js                  # Unified LLM provider (Gemini + DeepSeek)
+│       ├── tokenTracker.js         # Token usage tracking
+│       └── sandboxManager.js       # Sandbox filesystem operations
+├── server/                         # Web dashboard backend
+│   ├── index.js                    # Express + WebSocket server (port 3000)
+│   ├── routes/
+│   │   └── projects.js             # REST API: /api/projects/*
+│   ├── services/
+│   │   └── graphRunner.js          # LangGraph <-> WebSocket bridge + InputBridge
+│   └── ws/
+│       └── handler.js              # WebSocket connection handler
+├── dashboard/                      # Web dashboard frontend (React + Vite)
+│   ├── src/
+│   │   ├── App.jsx                 # Main layout
+│   │   ├── index.css               # Industrial dark theme
+│   │   ├── store/projectStore.js   # Zustand global state
+│   │   ├── hooks/useWebSocket.js   # WS hook with auto-reconnect
+│   │   ├── lib/api.js              # Fetch wrapper for REST endpoints
+│   │   └── components/
+│   │       ├── PipelineVisualizer.jsx
+│   │       ├── LogStream.jsx
+│   │       ├── OutputPanel.jsx
+│   │       ├── HumanInputPanel.jsx
+│   │       └── TokenBudgetBar.jsx
+│   ├── package.json
+│   └── vite.config.js
 ├── tests/
 ├── docs/
-│   └── TECHNICAL.md               # This file
+│   └── TECHNICAL.md                # This file
 ├── package.json
 ├── .env.example
 └── README.md
@@ -585,15 +625,100 @@ After all phases:
 
 ---
 
-## 16. Future Phases
+## 16. Dashboard (Phase 5)
 
-| Phase | What Gets Added |
-|-------|----------------|
-| Phase 5 | User Feedback Loop (iterate on generated code) |
-| Phase 6 | React Frontend Dashboard (live progress, WebSocket) |
-| Phase 7 | Parallel Task Execution + Docker Runtime Testing |
+The web dashboard provides a real-time GUI on top of the LangGraph pipeline.
+
+### Architecture
+
+```
+Browser (localhost:5173)   Express Server (localhost:3000)   LangGraph
+        |                          |                              |
+        |--POST /api/projects----->|                              |
+        |                          |--graph.stream()------------->|
+        |--WS connect ------------>|                              |
+        |<--node_complete----------|<--yield {nodeName: data}-----|
+        |<--human_input_needed-----|                              |
+        |--human_response--------->|--InputBridge.resolve()------>|
+        |<--run_complete-----------|                              |
+```
+
+### Key Components
+
+| Component | File | Purpose |
+|-----------|------|---------|
+| Express Server | `server/index.js` | HTTP + WebSocket server on port 3000 |
+| REST Routes | `server/routes/projects.js` | Start, list, resume, cancel, sandbox file access |
+| Graph Runner | `server/services/graphRunner.js` | Runs `graph.stream()`, pipes events to WebSocket |
+| InputBridge | inside graphRunner.js | Promise-based pause/resume for human-in-the-loop |
+| WS Handler | `server/ws/handler.js` | Client registry, message routing (human_response, cancel, ping) |
+| Zustand Store | `dashboard/src/store/projectStore.js` | Central state: pipeline phases, events, outputs, token usage |
+| useWebSocket | `dashboard/src/hooks/useWebSocket.js` | WS connection with auto-reconnect (5 attempts) |
+| PipelineVisualizer | `dashboard/src/components/` | Horizontal phase blocks with animated node dots |
+| LogStream | `dashboard/src/components/` | Auto-scrolling real-time event log |
+| OutputPanel | `dashboard/src/components/` | Tabbed view: Spec / Blueprint / Tasks / Code / Result |
+| HumanInputPanel | `dashboard/src/components/` | PM Q&A form + escalation decision UI |
+| TokenBudgetBar | `dashboard/src/components/` | Live cost/budget progress bar |
+
+### InputBridge Pattern
+
+The key challenge: LangGraph nodes run synchronously inside `graph.stream()`, but human input arrives asynchronously from the browser. The `InputBridge` class solves this with a Promise:
+
+```javascript
+// Node calls this -- suspends the stream
+const answer = await inputBridge.waitForInput("pm_clarification", { questions });
+
+// WebSocket receives user response -- resumes the stream
+inputBridge.provideInput(data); // resolves the Promise above
+```
+
+### WebSocket Event Protocol
+
+| Event (Server → Client) | Payload |
+|-------------------------|---------|
+| `node_complete` | `{ node, data }` |
+| `phase_change` | `{ phase }` |
+| `spec_ready` | `{ spec }` |
+| `blueprint_update` | `{ blueprint }` |
+| `taskqueue_ready` | `{ taskQueue }` |
+| `task_started` | `{ task }` |
+| `task_progress` | `{ statuses }` |
+| `code_written` | `{ files }` |
+| `review_result` | `{ review }` |
+| `human_input_needed` | `{ inputType, questions, task, error }` |
+| `token_update` | `{ usage }` |
+| `run_complete` | `{ finalState }` |
+| `error` | `{ message, recoverable }` |
+
+| Event (Client → Server) | Payload |
+|-------------------------|---------|
+| `human_response` | `{ data }` |
+| `cancel` | — |
+| `ping` | — |
+
+### Running the Dashboard
+
+```bash
+# Terminal 1
+npm run server        # Starts Express + WS on port 3000
+
+# Terminal 2
+npm run dashboard     # Starts Vite dev server on port 5173
+
+# Then open http://localhost:5173
+```
 
 ---
 
-**Document Version**: 2.0
-**Last Updated**: Phase 4 Implementation
+## 17. Roadmap
+
+| Phase | What Gets Added |
+|-------|----------------|
+| Phase 6 | Parallel Task Execution (multiple coders at once) |
+| Phase 7 | Docker Runtime Testing (actually run the generated code) |
+| Phase 8 | User Feedback Loop (iterate on generated code in browser) |
+
+---
+
+**Document Version**: 3.0
+**Last Updated**: Phase 5 — Dashboard Implementation
