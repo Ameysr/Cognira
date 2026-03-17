@@ -2,7 +2,7 @@
  * sandboxHealthCheck.js - LangGraph Node
  *
  * Runs health checks on the sandbox.
- * If healthy -> proceed.
+ * If healthy -> selectNextTask (start dev loop).
  * If unhealthy -> retry setup (max 2) or end with error.
  * Zero LLM calls.
  */
@@ -43,7 +43,7 @@ export async function sandboxHealthCheckNode(state) {
 
 export function sandboxHealthRouter(state) {
     if (state.sandboxHealthy) {
-        return "__end__";
+        return "selectNextTask";
     }
 
     console.log("   Sandbox unhealthy -- ending with error. Fix manually and retry.");
