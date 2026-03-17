@@ -193,3 +193,33 @@ export function makeTokenDelta(agentName, tokens) {
     addedCost: tokens.cost,
   };
 }
+
+/** Empty token delta -- for when LLM call fails */
+export function emptyTokenDelta(agentName) {
+  return makeTokenDelta(agentName, { input: 0, output: 0, cost: 0 });
+}
+
+/**
+ * Safe wrapper around callLLM -- NEVER throws (except TOKEN_BUDGET_EXCEEDED).
+ * Returns { ok: true, parsed, raw, tokens } on success
+ * Returns { ok: false, error, tokens } on failure
+ *
+ * Use this in every agent to prevent graph crashes.
+ */
+export async function safeCallLLM(options) {
+  try {
+    const result = await callLLM(options);
+    return { ok: true, ...result };
+  } catch (error) {
+    if (error.message?.includes("TOKEN_BUDGET_EXCEEDED")) throw error;
+
+    console.error(`[${options.agentName}] LLM call failed: ${error.message}`);
+    return {
+      ok: false,
+      error: error.message,
+      parsed: null,
+      raw: "",
+      tokens: { input: 0, output: 0, cost: 0 },
+    };
+  }
+}
