@@ -25,11 +25,12 @@
 
 Cognira is an autonomous multi-agent system that transforms a software requirement into a complete, working application. It uses LangGraph (a state machine framework) and LLM APIs (Gemini or DeepSeek) to orchestrate multiple specialized AI agents that work together like a real development team.
 
-### Current Implementation: Phase 3
+### Current Implementation: Phase 4 (Full Dev Loop)
 
 - **Phase 1**: PM Agent - Converts vague requirements into detailed specifications
 - **Phase 2**: Architect Agent - Designs database schema, APIs, and frontend structure
 - **Phase 3**: Planner Agent - Creates an ordered build plan and sets up a sandbox workspace
+- **Phase 4**: Dev Loop - Coder + Reviewer + Executor + Debugger with autonomous code generation
 
 ### Technology Stack
 
@@ -487,11 +488,15 @@ DEBUG=true
 node tests/test-graph-skeleton.js    # Graph wiring (20 assertions)
 node tests/test-validator.js         # Blueprint validation (11 assertions)
 node tests/test-sandbox.js           # Sandbox operations (16 assertions)
+node tests/test-devloop.js           # Dev loop wiring (14 assertions)
 
 # Real API tests (requires API key in .env)
 node tests/test-pm-agent.js
 node tests/test-architect.js
 node tests/test-planner.js
+
+# All mock tests at once
+npm run test:all:mock
 ```
 
 ---
@@ -505,20 +510,90 @@ node tests/test-planner.js
 | Validator | <1s | Pure JS |
 | Planner | 3-8s | LLM API latency |
 | Sandbox Setup | 1-2s | Filesystem I/O |
-| **Total** | **25-55s** | |
+| Dev Loop (per task) | 10-30s | LLM calls (coder + reviewer + registry) |
+| **Total (small app)** | **2-5 min** | |
+| **Total (medium app)** | **5-15 min** | |
 
 ---
 
-## 15. Future Phases
+## 15. Phase 4: Dev Loop Architecture
+
+### 15.1 New Agents
+
+| Agent | LLM Calls | Purpose |
+|-------|-----------|----------|
+| **Coder Agent** | 1 per file | Writes code. ONE file per LLM call to prevent truncation. Scaffold-aware (won't overwrite db.js, auth.js). |
+| **Reviewer Agent** | 1 per cycle | Static code review. Checks imports, exports, async/await, response format, auth patterns. Max 2 rejection cycles. |
+| **Executor Agent** | 0 | Cross-reference verification. Checks file existence, import resolution, convention compliance. No runtime needed. |
+| **Debugger Agent** | 1 per attempt | 3-tier escalation: Tier 1 (failing files), Tier 2 (broader context), Tier 2.5 (rollback), Tier 3 (human). |
+
+### 15.2 New Nodes (Zero LLM)
+
+| Node | Purpose |
+|------|---------|
+| **Select Next Task** | Queue foreman. Picks next pending task, routes to context builder or phase verification. |
+| **Context Builder** | Assembles smart context for the coder. 3-tier dependency lookup (exact -> fuzzy -> disk). Auto-includes models for routes, api util for pages. |
+| **Update Registry** | Indexes file exports so future files know exactly how to import them. |
+| **Snapshot Manager** | Git commit + tag after each successful task. Creates rollback points. |
+| **Simplify Task** | LLM call to break a failed task into 2-3 simpler sub-tasks. |
+| **Human Escalation** | Three options: provide guidance, skip task, or simplify. |
+| **Phase Verification** | Checks all expected files exist. Triggers entry point assembly. |
+| **Assemble Entry Points** | Auto-wires backend routes into index.js and frontend pages into App.jsx from the registry. Zero LLM. |
+| **Pattern Extractor** | Reads code and distills patterns (error handling, naming, imports) to prevent style drift. |
+| **State Compactor** | Trims completed task data to keep state within context window limits. |
+| **Present to User** | Final project summary with file list, task status, and deployment instructions. |
+| **Deployment Verifier** | Generates Dockerfiles, nginx config, docker-compose.yml. Optionally builds and tests. |
+
+### 15.3 Dev Loop Flow
+
+```
+Task Queue: [t1, t2, t3, ...]
+
+For each task:
+  1. selectNextTask    -- pick next pending task
+  2. contextBuilder    -- assemble dependencies, schema, patterns
+  3. coderAgent        -- write files (1 LLM call per file)
+  4. updateRegistry    -- index exports (1 LLM call)
+  5. reviewerAgent     -- review code (1 LLM call)
+       |-> rejected: retry from step 2 (max 2 cycles)
+       |-> 3+ rejects: simplifyTask -> back to step 1
+  6. executorAgent     -- cross-reference check (0 LLM calls)
+       |-> fail: debuggerAgent -> retry or escalate
+  7. snapshotManager   -- git commit + tag
+  8. stateCompactor    -- trim state
+  9. back to step 1
+
+After all tasks in a phase:
+  phaseVerification -> assembleEntryPoints -> patternExtractor
+
+After all phases:
+  presentToUser -> END
+```
+
+### 15.4 Error Recovery Paths
+
+| Situation | Recovery |
+|-----------|---------|
+| Reviewer rejects (1-2x) | Fresh context + retry with issues as feedback |
+| Reviewer rejects (3x) | Simplify task into sub-tasks |
+| Executor fails | Debugger Tier 1: read failing files |
+| Debugger fails (3x) | Tier 2: read MORE project files |
+| Debugger Tier 2 fails | Tier 2.5: rollback to last good git tag |
+| Rollback fails | Human escalation: guide / skip / simplify |
+| LLM call fails | safeCallLLM catches error, returns {ok: false} |
+| Token budget exceeded | Hard stop, preserves partial progress |
+
+---
+
+## 16. Future Phases
 
 | Phase | What Gets Added |
 |-------|----------------|
-| Phase 4 | Context Builder + Coder Agent + File Registry + Snapshots |
-| Phase 5 | Reviewer + SimplifyTask + Executor + Debugger |
-| Phase 6 | Feedback Loop + Deploy Agent + Token Budget |
-| Phase 7 | React Frontend Dashboard |
+| Phase 5 | User Feedback Loop (iterate on generated code) |
+| Phase 6 | React Frontend Dashboard (live progress, WebSocket) |
+| Phase 7 | Parallel Task Execution + Docker Runtime Testing |
 
 ---
 
-**Document Version**: 1.0
-**Last Updated**: Phase 3 Implementation
+**Document Version**: 2.0
+**Last Updated**: Phase 4 Implementation

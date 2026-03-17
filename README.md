@@ -2,7 +2,7 @@
 
 AI-Powered Multi-Agent Software Development System built with LangGraph + Gemini/DeepSeek.
 
-Give it a software idea. It analyzes requirements, designs the architecture, creates a build plan, and sets up a project workspace -- all autonomously.
+Give it a software idea. It analyzes requirements, designs the architecture, creates a build plan, sets up a project workspace, and **writes the entire codebase** -- all autonomously.
 
 ---
 
@@ -13,6 +13,7 @@ Give it a software idea. It analyzes requirements, designs the architecture, cre
 - Node.js 18+ installed
 - A Gemini API key ([get one free](https://aistudio.google.com/apikey)) or DeepSeek API key ([get one](https://platform.deepseek.com/api_keys))
 - (Optional) Redis for state persistence: `docker run -d -p 6379:6379 redis:latest`
+- (Optional) Docker for deployment verification
 
 ### 2. Setup
 
@@ -37,15 +38,28 @@ node src/index.js
 
 ### 4. What Happens
 
-1. **PM Agent** analyzes your requirement
-2. If ambiguous, asks you 3-8 clarifying questions
-3. You answer in the terminal
-4. PM Agent generates a structured project specification
-5. **Architect Agent** designs entities, DB schema, API endpoints, frontend pages, folder structure (5 steps)
-6. **Blueprint Validator** cross-checks the architecture for contradictions (zero LLM calls)
-7. **Planner Agent** creates a phased build order with dependency tracking
-8. **Sandbox** sets up a real project workspace on disk
-9. Token usage summary displayed
+**Phase 1-3 (Planning):**
+1. **PM Agent** analyzes your requirement, asks clarifying questions
+2. **Architect Agent** designs entities, DB schema, API endpoints, frontend pages, folder structure (5 steps)
+3. **Blueprint Validator** cross-checks the architecture for contradictions (zero LLM calls)
+4. **Planner Agent** creates a phased build order with dependency tracking
+5. **Sandbox** sets up a real project workspace with scaffold files
+
+**Phase 4 (Dev Loop -- fully autonomous):**
+6. **Select Next Task** picks the next task from the queue
+7. **Context Builder** assembles smart context (3-tier dependency lookup, DB schema, patterns)
+8. **Coder Agent** writes one file per LLM call (scaffold-aware, retry-aware)
+9. **Update Registry** indexes new file exports for dependency tracking
+10. **Reviewer Agent** static code review (max 2 rejection cycles)
+11. **Executor Agent** cross-references imports, exports, conventions (no runtime needed)
+12. **Snapshot Manager** creates Git snapshots after each successful task
+13. **Debugger Agent** 3-tier escalation (fix -> broader context -> rollback)
+14. **Human Escalation** lets you guide, skip, or simplify stuck tasks
+15. **Simplify Task** breaks complex failures into sub-tasks
+16. **Phase Verification** verifies files + auto-wires entry points (routes, pages)
+17. **Pattern Extractor** distills code patterns to prevent style drift
+18. **State Compactor** trims completed state to keep context lean
+19. **Present to User** shows final project summary
 
 ---
 
@@ -73,8 +87,11 @@ DEEPSEEK_API_KEY=your_key_here
 ## Testing
 
 ```bash
-# Graph skeleton test (no API key needed - all mocked)
+# Graph skeleton test (no API key needed)
 npm run test:graph
+
+# Dev loop wiring test (no API key needed -- 14 assertions)
+npm run test:devloop
 
 # PM Agent with real LLM API
 npm run test:pm
@@ -88,7 +105,7 @@ npm run test:planner
 # Sandbox Manager (no API key needed)
 npm run test:sandbox
 
-# All mock tests
+# All mock tests (graph + validator + sandbox + devloop)
 npm run test:all:mock
 ```
 
@@ -99,30 +116,49 @@ npm run test:all:mock
 ```
 cognira/
 ├── src/
-│   ├── index.js              # Main entry point (CLI)
+│   ├── index.js                    # Main entry point (CLI)
 │   ├── agents/
-│   │   ├── pmAgent.js        # PM Agent -- requirement -> spec
-│   │   ├── architectAgent.js # Architect Agent -- spec -> blueprint (5 steps)
-│   │   ├── blueprintValidator.js  # Cross-validates blueprint (no LLM)
-│   │   └── plannerAgent.js   # Planner Agent -- blueprint -> build order
+│   │   ├── pmAgent.js              # PM Agent -- requirement -> spec
+│   │   ├── architectAgent.js       # Architect Agent -- spec -> blueprint (5 steps)
+│   │   ├── blueprintValidator.js   # Cross-validates blueprint (no LLM)
+│   │   ├── plannerAgent.js         # Planner Agent -- blueprint -> build order
+│   │   ├── coderAgent.js           # Coder Agent -- one file per LLM call
+│   │   ├── reviewerAgent.js        # Reviewer Agent -- static code review
+│   │   ├── executorAgent.js        # Executor Agent -- cross-reference verification
+│   │   └── debuggerAgent.js        # Debugger Agent -- 3-tier error escalation
 │   ├── nodes/
-│   │   ├── humanInput.js     # Terminal input for Q&A
-│   │   ├── setupSandbox.js   # Creates project workspace
-│   │   └── sandboxHealthCheck.js  # Verifies sandbox health
+│   │   ├── humanInput.js           # Terminal input for Q&A
+│   │   ├── setupSandbox.js         # Creates workspace + seeds registry
+│   │   ├── sandboxHealthCheck.js   # Verifies sandbox -> starts dev loop
+│   │   ├── selectNextTask.js       # Task queue foreman (zero LLM)
+│   │   ├── contextBuilder.js       # Smart context builder (3-tier lookup)
+│   │   ├── updateRegistry.js       # File interface registry updater
+│   │   ├── snapshotManager.js      # Git snapshot after successful task
+│   │   ├── simplifyTask.js         # Breaks failed tasks into sub-tasks
+│   │   ├── humanEscalation.js      # Human intervention (guide/skip/simplify)
+│   │   ├── phaseVerification.js    # Phase integrity check + assembly
+│   │   ├── assembleEntryPoints.js  # Auto-wire routes + pages
+│   │   ├── patternExtractor.js     # Code pattern extraction
+│   │   ├── stateCompactor.js       # State trimmer (zero LLM)
+│   │   ├── presentToUser.js        # Final project presentation
+│   │   └── deploymentVerifier.js   # Docker deployment verifier
 │   ├── config/
-│   │   ├── state.js          # LangGraph state definition
-│   │   └── graph.js          # LangGraph wiring + checkpointer
+│   │   ├── state.js                # LangGraph state definition
+│   │   └── graph.js                # LangGraph wiring (28 nodes)
 │   └── utils/
-│       ├── llm.js            # Unified LLM provider (Gemini + DeepSeek)
-│       ├── tokenTracker.js   # Token usage display
-│       └── sandboxManager.js # Sandbox filesystem operations
+│       ├── llm.js                  # Unified LLM provider (Gemini + DeepSeek)
+│       ├── tokenTracker.js         # Token usage display
+│       └── sandboxManager.js       # Sandbox operations + scaffold generation
 ├── tests/
 │   ├── test-graph-skeleton.js
 │   ├── test-pm-agent.js
 │   ├── test-architect.js
 │   ├── test-planner.js
 │   ├── test-validator.js
-│   └── test-sandbox.js
+│   ├── test-sandbox.js
+│   └── test-devloop.js             # Dev loop wiring test (14 assertions)
+├── docs/
+│   └── TECHNICAL.md                # Deep technical documentation
 ├── .env.example
 ├── .gitignore
 └── package.json
@@ -145,24 +181,57 @@ START -> [PM Agent] <-> [Human Input]
         [Planner Agent]
               |
               v
-        [Setup Sandbox] -> [Health Check] -> END
+        [Setup Sandbox] -> [Health Check]
+              |
+              v (healthy)
+        [Select Next Task] <--+-----------------------------+
+              |                |                             |
+              v                |                             |
+        [Context Builder] -> [Coder] -> [Registry] -> [Reviewer]
+                                                         |
+                                          approved       rejected (<=2)
+                                            |              |
+                                            v              +-> [Context Builder] (retry)
+                                       [Executor]         rejected (3+)
+                                         |    |            |
+                                       pass  fail          +-> [Simplify Task] -> [Select Next]
+                                         |    |
+                                         v    v
+                                    [Snapshot] [Debugger]
+                                         |       |     |
+                                         v    fix     tier 3
+                                    [Compactor]  |      |
+                                         |       v      v
+                                         v  [Context] [Human Escalation]
+                                    [Select Next]        |     |     |
+                                                       guide  skip  simplify
+              (all done)                                 |     |     |
+              v                                          v     v     v
+        [Phase Verification] -> [Pattern Extractor] -> [Compactor] -> [Select Next]
+              ...
+        [Present to User] -> END
 ```
 
 All nodes communicate through a shared LangGraph state. No direct function calls between nodes. State is checkpointed after every node (Redis or in-memory).
 
 ---
 
-## Documentation
+## Key Design Decisions
 
-For a deep technical breakdown of every component, data flow, state management, error handling, and design decisions, see [docs/TECHNICAL.md](docs/TECHNICAL.md).
+| Decision | Why |
+|----------|-----|
+| **One file per LLM call** | Prevents truncation, each response is small and complete |
+| **Scaffold files are deterministic** | LLM only writes business logic, not boilerplate |
+| **3-tier dependency lookup** | Exact match -> fuzzy match -> disk fallback |
+| **File registry** | Coder always knows exact import statements |
+| **Pattern extraction** | Prevents style drift across phases |
+| **Git snapshots** | Debugger can rollback to last known good state |
+| **Max 2 review cycles** | Then simplify task instead of infinite retries |
+| **State compaction** | Keeps state lean as task count grows |
+| **Multi-LLM** | Gemini or DeepSeek via unified `callLLM()` |
 
 ---
 
-## Roadmap
+## Documentation
 
-| Phase | What Gets Added |
-|-------|----------------|
-| Phase 4 | Context Builder + Coder Agent + Registry + Snapshots |
-| Phase 5 | Reviewer + SimplifyTask + Executor + Debugger |
-| Phase 6 | Feedback Loop + Deploy Agent + Token Budget |
-| Phase 7 | React Frontend Dashboard |
+For a deep technical breakdown of every component, data flow, state management, error handling, and design decisions, see [docs/TECHNICAL.md](docs/TECHNICAL.md).
