@@ -24,7 +24,7 @@ import os from "os";
 
 const sandboxes = new Map();
 
-export async function createSandbox(folderStructure, dependencies) {
+export async function createSandbox(folderStructure, dependencies, dbSchema) {
     const sandboxId = `sandbox-${Date.now()}`;
     const sandboxPath = path.join(os.tmpdir(), "cognira", sandboxId);
 
@@ -96,15 +96,240 @@ export async function createSandbox(folderStructure, dependencies) {
         );
     }
 
-    fs.writeFileSync(
-        path.join(backendPath, ".env.example"),
-        "PORT=5000\nDATABASE_URL=postgresql://user:pass@localhost:5432/dbname\nJWT_SECRET=your_secret\n"
-    );
-    fs.writeFileSync(
-        path.join(frontendPath, ".env.example"),
-        "VITE_API_URL=http://localhost:5000/api\n"
-    );
+    // Detect DB type
+    const dbType = dependencies?.backend?.dependencies?.mongoose ? "mongo" : "postgres";
 
+    // .env files (actual, not just example)
+    fs.writeFileSync(path.join(backendPath, ".env"), [
+        "PORT=5000",
+        `DATABASE_URL=${dbType === "mongo" ? "mongodb://localhost:27017/appdb" : "postgresql://postgres:postgres@localhost:5432/appdb"}`,
+        "JWT_SECRET=dev-secret-change-in-production",
+        "NODE_ENV=development",
+    ].join("\n") + "\n");
+
+    fs.writeFileSync(path.join(frontendPath, ".env"), [
+        "VITE_API_URL=http://localhost:5000/api",
+    ].join("\n") + "\n");
+
+    // .gitignore
+    fs.writeFileSync(path.join(sandboxPath, ".gitignore"), [
+        "node_modules/", ".env", "dist/", ".DS_Store", "*.log",
+    ].join("\n") + "\n");
+
+    // --- Deterministic scaffold files ---
+    // These NEVER change between projects. Generating them here
+    // means the LLM only writes business logic (models, routes, pages).
+
+    // Backend: src/config/db.js
+    if (dbType === "postgres") {
+        fs.writeFileSync(path.join(backendPath, "src/config/db.js"), `import pg from 'pg';
+import 'dotenv/config';
+
+const pool = new pg.Pool({
+  connectionString: process.env.DATABASE_URL,
+});
+
+pool.on('error', (err) => {
+  console.error('Unexpected DB error:', err);
+});
+
+export { pool };
+
+export async function connectDB() {
+  try {
+    const client = await pool.connect();
+    console.log('Connected to PostgreSQL');
+    client.release();
+  } catch (err) {
+    console.error('DB connection failed:', err.message);
+  }
+}
+`);
+    } else {
+        fs.writeFileSync(path.join(backendPath, "src/config/db.js"), `import mongoose from 'mongoose';
+import 'dotenv/config';
+
+export async function connectDB() {
+  try {
+    await mongoose.connect(process.env.DATABASE_URL);
+    console.log('Connected to MongoDB');
+  } catch (err) {
+    console.error('DB connection failed:', err.message);
+  }
+}
+
+export default mongoose;
+`);
+    }
+
+    // Backend: src/index.js (Express skeleton)
+    fs.writeFileSync(path.join(backendPath, "src/index.js"), `import express from 'express';
+import cors from 'cors';
+import 'dotenv/config';
+import { connectDB } from './config/db.js';
+
+const app = express();
+const PORT = process.env.PORT || 5000;
+
+// Middleware
+app.use(cors());
+app.use(express.json());
+
+// Health check
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// ROUTE IMPORTS (auto-assembled after all routes are built)
+// ROUTE_IMPORTS_PLACEHOLDER
+// ROUTE_MOUNTS_PLACEHOLDER
+
+// Error handler (must be last)
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).json({ success: false, message: err.message || 'Internal server error' });
+});
+
+// Start
+connectDB().then(() => {
+  app.listen(PORT, () => {
+    console.log(\`Server running on port \${PORT}\`);
+  });
+});
+
+export default app;
+`);
+
+    // Backend: src/middleware/auth.js (JWT skeleton)
+    fs.writeFileSync(path.join(backendPath, "src/middleware/auth.js"), `import jwt from 'jsonwebtoken';
+
+export function authenticateToken(req, res, next) {
+  const authHeader = req.headers.authorization;
+  const token = authHeader && authHeader.split(' ')[1];
+  if (!token) return res.status(401).json({ success: false, message: 'No token provided' });
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    req.user = decoded;
+    next();
+  } catch (err) {
+    return res.status(403).json({ success: false, message: 'Invalid token' });
+  }
+}
+
+export function authorizeRole(...roles) {
+  return (req, res, next) => {
+    if (!req.user || !roles.includes(req.user.role)) {
+      return res.status(403).json({ success: false, message: 'Forbidden' });
+    }
+    next();
+  };
+}
+`);
+
+    // Frontend: index.html
+    fs.writeFileSync(path.join(frontendPath, "index.html"), `<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>App</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
+`);
+
+    // Frontend: src/main.jsx
+    fs.writeFileSync(path.join(frontendPath, "src/main.jsx"), `import React from 'react';
+import ReactDOM from 'react-dom/client';
+import App from './App';
+import './index.css';
+
+ReactDOM.createRoot(document.getElementById('root')).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);
+`);
+
+    // Frontend: src/App.jsx (shell -- pages assembled later)
+    fs.writeFileSync(path.join(frontendPath, "src/App.jsx"), `import { BrowserRouter, Routes, Route } from 'react-router-dom';
+
+// PAGE IMPORTS (auto-assembled after all pages are built)
+// PAGE_IMPORTS_PLACEHOLDER
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<div className="min-h-screen bg-gray-950 text-gray-100 flex items-center justify-center"><p>Loading...</p></div>} />
+        {/* PAGE_ROUTES_PLACEHOLDER */}
+      </Routes>
+    </BrowserRouter>
+  );
+}
+`);
+
+    // Frontend: src/index.css (Tailwind)
+    fs.writeFileSync(path.join(frontendPath, "src/index.css"), `@tailwind base;
+@tailwind components;
+@tailwind utilities;
+`);
+
+    // Frontend: tailwind.config.js
+    fs.writeFileSync(path.join(frontendPath, "tailwind.config.js"), `/** @type {import('tailwindcss').Config} */
+export default {
+  content: ["./index.html", "./src/**/*.{js,ts,jsx,tsx}"],
+  theme: { extend: {} },
+  plugins: [],
+};
+`);
+
+    // Frontend: postcss.config.js
+    fs.writeFileSync(path.join(frontendPath, "postcss.config.js"), `export default {
+  plugins: {
+    tailwindcss: {},
+    autoprefixer: {},
+  },
+};
+`);
+
+    // Frontend: vite.config.js
+    fs.writeFileSync(path.join(frontendPath, "vite.config.js"), `import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+
+export default defineConfig({
+  plugins: [react()],
+  server: {
+    proxy: {
+      '/api': 'http://localhost:5000'
+    }
+  }
+});
+`);
+
+    // Frontend: src/utils/api.js (axios instance)
+    fs.writeFileSync(path.join(frontendPath, "src/utils/api.js"), `import axios from 'axios';
+
+const api = axios.create({
+  baseURL: import.meta.env.VITE_API_URL || '/api',
+});
+
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('token');
+  if (token) config.headers.Authorization = \`Bearer \${token}\`;
+  return config;
+});
+
+export default api;
+`);
+
+    console.log("   Scaffold: backend skeleton, frontend boilerplate, configs created");
+
+    // Git init
     try {
         execSync("git init", { cwd: sandboxPath, stdio: "pipe" });
         execSync("git add -A", { cwd: sandboxPath, stdio: "pipe" });
@@ -119,6 +344,7 @@ export async function createSandbox(folderStructure, dependencies) {
         path: sandboxPath,
         backendPath,
         frontendPath,
+        dbType,
         createdAt: Date.now(),
         snapshotCount: 0,
     });
