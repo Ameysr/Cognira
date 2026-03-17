@@ -125,6 +125,30 @@ export const AgentState = Annotation.Root({
         default: () => false,
     }),
 
+    // -- Dev Loop (Phase 4) --
+    currentTask: Annotation({
+        reducer: (_, y) => y ?? null,
+        default: () => null,
+    }),
+
+    taskStatuses: Annotation({
+        reducer: (existing, incoming) => {
+            if (!incoming) return existing;
+            return { ...existing, ...incoming };
+        },
+        default: () => ({}),
+    }),
+
+    contextPackage: Annotation({
+        reducer: (_, y) => y ?? null,
+        default: () => null,
+    }),
+
+    coderOutput: Annotation({
+        reducer: (_, y) => y ?? null,
+        default: () => null,
+    }),
+
     // -- Reviewer --
     reviewResult: Annotation({
         reducer: (_, y) => y ?? { verdict: "", issues: [], reviewCycle: 0 },
@@ -177,6 +201,11 @@ export const AgentState = Annotation.Root({
     deploymentConfig: Annotation({
         reducer: (_, y) => y ?? { platform: "", files: [], instructions: [] },
         default: () => ({ platform: "", files: [], instructions: [] }),
+    }),
+
+    deploymentAttempts: Annotation({
+        reducer: (_, y) => y ?? 0,
+        default: () => 0,
     }),
 
     // -- Token Tracking --
