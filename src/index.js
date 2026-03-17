@@ -9,12 +9,11 @@
  * 2. Creates LangGraph with checkpointer
  * 3. Takes your requirement
  * 4. Runs the multi-agent pipeline:
- *    - PM Agent clarifies requirements
- *    - Architect designs the system
- *    - Blueprint Validator catches contradictions
- *    - Planner creates the build order
- *    - Sandbox sets up project workspace
- * 5. Outputs results
+ *    Phase 1: PM Agent clarifies requirements
+ *    Phase 2: Architect designs the system
+ *    Phase 3: Planner creates the build order + Sandbox sets up workspace
+ *    Phase 4: Dev Loop (Code -> Review -> Execute -> Debug -> Snapshot)
+ * 5. Presents completed project
  */
 
 import "dotenv/config";
@@ -44,7 +43,8 @@ function printBanner() {
     console.log("|                                                          |");
     console.log("|    COGNIRA - Multi-Agent Development System              |");
     console.log("|                                                          |");
-    console.log("|    PM + Architect + Planner + Sandbox                    |");
+    console.log("|    PM + Architect + Planner + Sandbox + Dev Loop         |");
+    console.log("|    Code -> Review -> Execute -> Debug -> Deploy          |");
     console.log("|                                                          |");
     console.log("+----------------------------------------------------------+");
     console.log("");
@@ -111,8 +111,6 @@ function printBlueprint(blueprint, validation) {
     }
 
     console.log("\n" + "=".repeat(60));
-    console.log("\n  Architecture complete! Blueprint will be passed to the");
-    console.log("     Planner Agent next.\n");
 }
 
 // -- Main --------------------------------------------------------------------
@@ -185,22 +183,33 @@ async function main() {
         );
 
         // 6. Display results
+
+        // Spec
         if (finalState.clarifiedSpec) {
             printSpec(finalState.clarifiedSpec);
         }
 
+        // Blueprint
         if (finalState.blueprint?.entities?.length) {
             printBlueprint(finalState.blueprint, finalState.blueprintValidation);
         }
 
+        // Build Plan
         if (finalState.taskQueue?.phases?.length) {
             console.log("\n" + "=".repeat(60));
             console.log("  BUILD PLAN");
             console.log("=".repeat(60));
             for (const phase of finalState.taskQueue.phases) {
-                console.log(`\n  Phase ${phase.phaseNumber}: ${phase.phaseName} (${phase.tasks?.length || 0} tasks)`);
+                const tasksDone = phase.tasks?.filter(t =>
+                    finalState.taskStatuses?.[t.taskId] === "done"
+                ).length || 0;
+                const totalTasks = phase.tasks?.length || 0;
+                const statusIcon = tasksDone === totalTasks ? "[done]" : `[${tasksDone}/${totalTasks}]`;
+
+                console.log(`\n  Phase ${phase.phaseNumber}: ${phase.phaseName} ${statusIcon}`);
                 phase.tasks?.forEach(t => {
-                    const icon = t.canParallelize ? "||" : "->";
+                    const status = finalState.taskStatuses?.[t.taskId] || "pending";
+                    const icon = status === "done" ? "[x]" : status === "in_progress" ? "[>]" : "[ ]";
                     console.log(`    ${icon} ${t.taskId}: ${t.title}`);
                     t.filesToCreate?.forEach(f => console.log(`      ${f}`));
                 });
@@ -208,24 +217,36 @@ async function main() {
             console.log("=".repeat(60));
         }
 
+        // Sandbox info
         if (finalState.sandboxId) {
             console.log(`\n  Sandbox: ${finalState.sandboxId}`);
             console.log(`  Healthy: ${finalState.sandboxHealthy ? "Yes" : "No"}`);
 
             try {
-                const { getFileList } = await import("./utils/sandboxManager.js");
+                const { getFileList, getSandboxPath } = await import("./utils/sandboxManager.js");
                 const files = getFileList(finalState.sandboxId);
-                console.log(`  Files created: ${files.length}`);
-                files.slice(0, 15).forEach(f => console.log(`     ${f}`));
-                if (files.length > 15) console.log(`     ... and ${files.length - 15} more`);
+                const codeFiles = files.filter(f =>
+                    !f.includes("node_modules") && !f.includes(".git") && !f.includes("package-lock")
+                );
+                console.log(`  Files created: ${codeFiles.length}`);
+                codeFiles.slice(0, 25).forEach(f => console.log(`     ${f}`));
+                if (codeFiles.length > 25) console.log(`     ... and ${codeFiles.length - 25} more`);
+
+                const sandboxPath = getSandboxPath(finalState.sandboxId);
+                console.log(`\n  Project location: ${sandboxPath}`);
             } catch (e) { /* sandbox may be cleaned up */ }
+        }
+
+        // Deployment
+        if (finalState.deploymentConfig?.files?.length) {
+            console.log("\n  Deployment:");
+            console.log(`  Platform: ${finalState.deploymentConfig.platform}`);
+            finalState.deploymentConfig.instructions?.forEach(i => console.log(`     ${i}`));
         }
 
         if (!finalState.clarifiedSpec && !finalState.blueprint?.entities?.length) {
             console.log("\n  No output generated.");
         }
-
-        console.log("\n  Pipeline complete! Sandbox ready for coding.\n");
 
         // 7. Token usage summary
         printTokenSummary(finalState.tokenUsage);
