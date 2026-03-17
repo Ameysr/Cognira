@@ -12,7 +12,8 @@
     "test:validator": "node tests/test-validator.js",
     "test:planner": "node tests/test-planner.js",
     "test:sandbox": "node tests/test-sandbox.js",
-    "test:all:mock": "node tests/test-graph-skeleton.js && node tests/test-validator.js && node tests/test-sandbox.js"
+    "test:devloop": "node tests/test-devloop.js",
+    "test:all:mock": "node tests/test-graph-skeleton.js && node tests/test-validator.js && node tests/test-sandbox.js && node tests/test-devloop.js"
   },
   "dependencies": {
     "@langchain/langgraph": "^1.2.0",
